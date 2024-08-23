@@ -194,6 +194,7 @@ void drawHeader(String waktu_sekarang, String nama_wifi) {
   tft.setTextFont(1);
 }
 
+
 // Fungsi untuk menggambar grid dengan sudut bulat
 void drawGrid() {
   tft.fillScreen(TFT_BLACK);  // Mengatur latar belakang layar
