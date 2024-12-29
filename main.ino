@@ -1,9 +1,11 @@
+// Last update : 27 Desember 20244
 #define BLYNK_PRINT Serial
 
 #define BLYNK_TEMPLATE_ID "TMPL605TnFnNR"
 #define BLYNK_TEMPLATE_NAME "gh1"
 #define BLYNK_AUTH_TOKEN "pjXqJ1ufzY92Tt-5Ggihf9q7OkRue4Cs"
 
+#include <ArduinoJson.h>
 #include <WiFiManager.h>
 #include <TFT_eSPI.h>  // Pastikan untuk menggunakan library TFT yang sesuai
 #include "xbm.h"
@@ -14,9 +16,10 @@
 #include <DallasTemperature.h>
 #include <BlynkSimpleEsp32.h>
 #include <ModbusMaster.h>
+#include "credentials.h"
 
 TFT_eSPI tft = TFT_eSPI();  // Inisialisasi objek TFT
-float setpoint = 30; // Initial setpoint
+float setpoint = 50; // Initial setpoint
 WiFiManager wm;  // Inisialisasi WifiManager
 int timeout_hotspot = 120;
 
@@ -85,11 +88,10 @@ OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
 //EC-TDS RS485
-const int TDS_SENSOR_PIN = 34; // Pin where the TDS sensor is connected (e.g., GPIO 34)
+const int TDS_SENSOR_PIN = 35; // Pin where the TDS sensor is connected (e.g., GPIO 34)
 const float VREF = 3.3;         // Reference voltage for ESP32 (3.3V)
 const int TDS_MAX = 2000;       // Maximum TDS value in ppm
 float tDS;
-
 //BLYNK
 
 
@@ -100,10 +102,11 @@ float temperature;
 float humidity;
 float w_temperature;
 
-const int potPin=25;
+// const int potPin=25;
 const int dotPin=26;
 float ph,nilai_ph;
-float Value=0;
+// int phValue;
+int Value;
 
 float voltage;
 float ecValue;
@@ -118,6 +121,8 @@ String status_tds;
 String status_ph;
 
 DHT dht21(DHT21_1_PIN, DHT_SENSOR_TYPE);
+
+HardwareSerial mySerial(1);
 
 // Gradient Drawing Function
 void drawVerticalGradient(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color1, uint16_t color2) {
@@ -362,35 +367,41 @@ void cek_ds() {
 }
 
 void cek_ph() {
-    Value= analogRead(potPin);
-    Serial.print(Value);
-    Serial.print(" | ");
+    int Value = analogRead(26);
     float voltage=Value*(3.3/4095.0);
     ph=(3.3*voltage);
+    Serial.print(" | pH : ");
+    Serial.print(Value);
+    Serial.print(" | ");
+    // float voltage=Value*(3.3/4095.0);
+    // float ph=(3.3*voltage);
     nilai_ph = ph ;
 }
 
 void cek_tds(){
   int sensorValuetDS = analogRead(TDS_SENSOR_PIN);
   float voltagetDS = sensorValuetDS * (VREF / 4095.0);
-  tDS = (voltage / 5) * TDS_MAX;
+  tDS = (voltagetDS / 5) * TDS_MAX;
+  // tDS = sensorValuetDS;
 }
 
 
 void setup() {
   Serial.begin(115200);
-
+  analogReadResolution(12);
+  mySerial.begin(9600, SERIAL_8N1, 16, 17);
   // Inisial pinMode
   pinMode(RESET_WIFI_PB5_PIN, INPUT_PULLUP);
   pinMode(RESET_ESP_PB5_PIN, INPUT_PULLUP);
   pinMode(RELAY_1_PIN, OUTPUT);
   pinMode(BUZZER_1_PIN, OUTPUT);
-  pinMode(potPin,INPUT);
+  pinMode(26,INPUT);
   pinMode(TDS_SENSOR_PIN,INPUT);
   digitalWrite(RELAY_1_PIN, LOW);
   digitalWrite(BUZZER_1_PIN, HIGH);  // turn on buzzer
   delay(2000);
   digitalWrite(BUZZER_1_PIN, LOW);  // turn on buzzer
+  mySerial.begin(9600, SERIAL_8N1, 16, 17);
   // ======================================================================== Inisial TFT
   tft.init();
   tft.setRotation(1);         // Menyesuaikan orientasi layar jika perlu
@@ -453,14 +464,10 @@ void setup() {
     cek_tds();
     delay(500);
     tft.print("Sensor TDS : ");
-    if (tDS > 2.2 && tDS <= 990 ) {
+    if (tDS > 2.2 && tDS <= 2000 ) {
     tft.setTextColor(TFT_GREEN);
     tft.println("NORMAL");
     status_tds = "NORMAL";
-    } else if (tDS < 2.2 ) {
-    tft.setTextColor(TFT_RED);
-    tft.println("ERROR");
-    status_tds = "ERROR";
     } else {
     tft.setTextColor(TFT_YELLOW);
     tft.println("ABNORMAL");
@@ -471,7 +478,7 @@ void setup() {
     delay(200);
     tft.print("Sensor pH : ");
     if (nilai_ph > 0 && nilai_ph <= 14) {
-        if (nilai_ph >= 6.5 && nilai_ph <= 8.5) {
+        if (nilai_ph >= 6.5 && nilai_ph <= 10) {
             tft.setTextColor(TFT_GREEN);
             tft.println("NORMAL");
             status_ph = "NORMAL";
@@ -630,9 +637,8 @@ void loop() {
 
     temperature = dht21.readTemperature();
     humidity = dht21.readHumidity();
-    Serial.print(temperature);
-    Serial.print(" C | ");
-    Serial.println(humidity);
+    // Serial.print("tds :");
+    // Serial.print(tDS);
 
     if (isnan(w_temperature)) {
       Serial.println("Failed to read from DHT21 sensor!");
@@ -658,14 +664,27 @@ void loop() {
     w_temperature = sensors.getTempCByIndex(0); 
 
     //PH Sensor
-    Value= analogRead(potPin);
-    Serial.print(Value);
-    Serial.print(" | ");
-    float voltage=Value*(3.3/4095.0);
-    ph=(3.3*voltage);
-    nilai_ph = ph ;
-    Serial.println(nilai_ph);
-    delay(200);
+    // int Value = analogRead(26); // Read the ADC value (0 to 4095)
+    // int Value = 3000; // Read the ADC value (0 to 4095)
+    // delay(50);
+    // voltage = Value * (3.3 / 4095.0); // Convert ADC value to voltage
+    // Serial.print(" | pH : ");
+    // Serial.print(analogRead(26));
+    // float slope = 59.16; // pH sensor slope (mV/pH)
+    // float offset = 2.5;  // Example offset voltage (depends on calibration)
+    // ph = (voltage - offset) / slope + 7.0;
+
+    // int Value = analogRead(25); 
+    // voltage=Value*(3.3/4095.0);
+    // ph=(3.3*voltage);
+    // Value = analogRead(potPin);
+
+    // Serial.print(" | ");
+    // float voltage=Value*(3.3/4095.0);
+    // ph=(3.3*voltage);
+    // nilai_ph = ph;
+    // Serial.println(nilai_ph);
+    // delay(200);
 
     // adc0 = ads.readADC_SingleEnded(0);
     // volts0 = ads.computeVolts(adc0);
@@ -676,7 +695,49 @@ void loop() {
     // Serial.print("TDS : ");
     // Serial.println(tDS);
 
-    cek_tds();
+  //     int sensorValuetDS = analogRead(TDS_SENSOR_PIN);
+  // float voltagetDS = sensorValuetDS * (VREF / 4095.0);
+  // tDS = (voltagetDS / 5) * TDS_MAX;
+  // tDS = sensorValuetDS;
+
+      //TDS AND PH FROM ARDUINO
+      Serial.println("Checking for data...");
+
+  // Read incoming data from Arduino via UART
+  if (mySerial.available()) {
+    String receivedData = mySerial.readString();  // Read the incoming data (single number)
+
+    // Print the received data (for debugging)
+    Serial.println("Received Data: " + receivedData);
+    DynamicJsonDocument doc(1024);  // Allocate memory for JSON document
+    DeserializationError error = deserializeJson(doc, receivedData);
+
+    if (error) {
+      Serial.println("Failed to parse JSON");
+      return;
+    }
+
+    tDS = doc["TDS"];  // TDS value from Arduino
+    nilai_ph = doc["pH"];    // pH value from Arduino
+
+      Blynk.virtualWrite(V0, tDS);  // Send TDS value to Blynk
+      delay(1000);
+    Blynk.virtualWrite(V1, nilai_ph);    // Send pH value to Blynk
+
+    // Print the values to Serial Monitor for debugging
+    Serial.print("TDS: ");
+    Serial.print(tDS);
+    Serial.print(" ppm, ");
+    Serial.print("pH: ");
+    Serial.println(nilai_ph);
+
+
+  } else {
+    // If no data is available, print this message
+    Serial.println("No data available from Arduino.");
+  }
+     
+
   }
   // ======================================================================= Mengambil Waktu
 
@@ -687,17 +748,15 @@ void loop() {
 
   delay(100);
 
-    if (tDS >= 2.2 && tDS <= 990) {
+    if (tDS >= 2.2 && tDS <= 2000) {
         status_tds = "NORMAL";
-    } else if (tDS < 22.2) {
-        status_tds = "ERROR";
     } else {
         status_tds = "ABNORMAL";
     }
 
     delay(200);
     if (nilai_ph > 0 && nilai_ph <= 14) {
-        if (nilai_ph >= 6.5 && nilai_ph <= 8.5) {
+        if (nilai_ph >= 5.5 && nilai_ph <= 8.5) {
             status_ph = "NORMAL";
         } else {
             status_ph = "ABNORMAL";
@@ -729,7 +788,7 @@ void loop() {
 
   
     String info[GRID_ROWS][GRID_COLS] = {
-    { status_tds, status_ph, status_ds },
+    { status_tds, status_ph, String(setpoint) },
     { status_dht, status_dht, "" },
   };
   
@@ -741,10 +800,10 @@ void loop() {
   drawInfo(info);
   // ======================================================================= TFT DRAW
 
-  Blynk.virtualWrite(V0, tDS);
-  Blynk.virtualWrite(V1, nilai_ph);
+  // Blynk.virtualWrite(V0, tDS);
+  // Blynk.virtualWrite(V1, nilai_ph);
   Blynk.virtualWrite(V2, w_temperature);
-  Blynk.virtualWrite(V4, status_blower);
+  Blynk.virtualWrite(V4, status_blower); //1 on // 0 off
 }
 
   BLYNK_WRITE(V3) {
