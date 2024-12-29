@@ -12,11 +12,11 @@
 #include <DHT.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <Adafruit_ADS1X15.h>
-#include <DFRobot_ESP_EC.h>
 #include <BlynkSimpleEsp32.h>
-TFT_eSPI tft = TFT_eSPI();  // Inisialisasi objek TFT
+#include <ModbusMaster.h>
 
+TFT_eSPI tft = TFT_eSPI();  // Inisialisasi objek TFT
+float setpoint = 30; // Initial setpoint
 WiFiManager wm;  // Inisialisasi WifiManager
 int timeout_hotspot = 120;
 
@@ -62,7 +62,7 @@ const long interval = 1000;        // Interval at which to print time (milliseco
 #define RESET_ESP_PB5_PIN 12  // Tombol konfigurasi Wifi
 
 //DHT21
-#define DHT21_1_PIN 5
+#define DHT21_1_PIN 17
 #define RELAY_1_PIN 14
 #define RELAY_2_PIN
 #define BUZZER_1_PIN 27
@@ -80,9 +80,15 @@ const long interval = 1000;        // Interval at which to print time (milliseco
 #define PH_LOWER_THRESHOLD 0  // lower ph threshold
 
 //DS18B20
-#define ONE_WIRE_BUS 17  // this is the gpio pin 18 on esp32.
+#define ONE_WIRE_BUS 5  // this is the gpio pin 18 on esp32.
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
+
+//EC-TDS RS485
+const int TDS_SENSOR_PIN = 34; // Pin where the TDS sensor is connected (e.g., GPIO 34)
+const float VREF = 3.3;         // Reference voltage for ESP32 (3.3V)
+const int TDS_MAX = 2000;       // Maximum TDS value in ppm
+float tDS;
 
 //BLYNK
 
@@ -94,16 +100,13 @@ float temperature;
 float humidity;
 float w_temperature;
 
-const int potPin=34;
+const int potPin=25;
+const int dotPin=26;
 float ph,nilai_ph;
 float Value=0;
 
-DFRobot_ESP_EC ec;
-Adafruit_ADS1115 ads;
-
 float voltage;
 float ecValue;
-float tDS;
 int16_t adc0;
 int16_t adc1;
 float volts0;
@@ -115,8 +118,6 @@ String status_tds;
 String status_ph;
 
 DHT dht21(DHT21_1_PIN, DHT_SENSOR_TYPE);
-
-
 
 // Gradient Drawing Function
 void drawVerticalGradient(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t color1, uint16_t color2) {
@@ -164,7 +165,7 @@ void drawHeader(String waktu_sekarang, String nama_wifi) {
   tft.setTextFont(2);
   // Text segments
   String text1 = waktu_sekarang;
-  String text2 = "GREEN-HOUSE";
+  String text2 = "GREENHOUSE";
   String text3 = "WiFi : " + nama_wifi;
 
   // Measure text widths
@@ -370,12 +371,11 @@ void cek_ph() {
 }
 
 void cek_tds(){
-    adc0 = ads.readADC_SingleEnded(0);
-    volts0 = ads.computeVolts(adc0);
-    voltage = ads.readADC_SingleEnded(0) / 10;
-    ecValue = ec.readEC(voltage, w_temperature);  // convert voltage to EC with temperature compensation
-    tDS = ((ecValue * 100) / 1.1);
+  int sensorValuetDS = analogRead(TDS_SENSOR_PIN);
+  float voltagetDS = sensorValuetDS * (VREF / 4095.0);
+  tDS = (voltage / 5) * TDS_MAX;
 }
+
 
 void setup() {
   Serial.begin(115200);
@@ -384,9 +384,13 @@ void setup() {
   pinMode(RESET_WIFI_PB5_PIN, INPUT_PULLUP);
   pinMode(RESET_ESP_PB5_PIN, INPUT_PULLUP);
   pinMode(RELAY_1_PIN, OUTPUT);
+  pinMode(BUZZER_1_PIN, OUTPUT);
   pinMode(potPin,INPUT);
+  pinMode(TDS_SENSOR_PIN,INPUT);
   digitalWrite(RELAY_1_PIN, LOW);
-
+  digitalWrite(BUZZER_1_PIN, HIGH);  // turn on buzzer
+  delay(2000);
+  digitalWrite(BUZZER_1_PIN, LOW);  // turn on buzzer
   // ======================================================================== Inisial TFT
   tft.init();
   tft.setRotation(1);         // Menyesuaikan orientasi layar jika perlu
@@ -409,7 +413,7 @@ void setup() {
   //======================================================================= Setup Wifi Manager
   //wm.resetSettings();  // Pakai ini jika dalam mode DEV
   tft.println("Menghubungkan Wifi");
-  bool res = wm.autoConnect("GREEN-HOUSE", "adalah12345");
+  bool res = wm.autoConnect("GREENHOUSE-A997", "60776747");
 
   if (res) {
     //if you get here you have connected to the WiFi
@@ -433,10 +437,7 @@ void setup() {
     //=======================================================================SETUP DS18B20
     
     //=======================================================================SETUP TDS
-    EEPROM.begin(32);  //needed EEPROM.begin to store calibration k in eeprom
-    ec.begin();
-    ads.setGain(GAIN_ONE);
-    ads.begin();
+
     //=======================================================================SETUP TDS
 
     delay(200);
@@ -486,13 +487,13 @@ void setup() {
     }
     delay(200);
     tft.setTextColor(TFT_WHITE);
-    tft.print("Sensor suhu air : ");
-    if (w_temperature < TEMP_UPPER_THRESHOLD || w_temperature > TEMP_LOWER_THRESHOLD) {
+    tft.print("Sensor suhu : ");
+    if (w_temperature < setpoint || w_temperature > TEMP_LOWER_THRESHOLD) {
     tft.setTextColor(TFT_GREEN);
     tft.println("NORMAL");
     status_ds = "NORMAL";
     }
-    else if (w_temperature > TEMP_UPPER_THRESHOLD || w_temperature < TEMP_LOWER_THRESHOLD) {
+    else if (w_temperature > setpoint || w_temperature < TEMP_LOWER_THRESHOLD) {
     tft.setTextColor(TFT_YELLOW);
     tft.println("ABNORMAL");
     status_ds = "ABNORMAL";
@@ -549,7 +550,7 @@ void setup() {
 
   // Contoh nilai yang akan ditampilkan
   String judul[GRID_ROWS][GRID_COLS] = {
-    { "TDS(PPM)", "KADAR pH", "SUHU-AIR" },
+    { "TDS(PPM)", "KADAR pH", "SUHU" },
     { "SUHU", "LEMBAP", "BLOWER" },
   };
   String values[GRID_ROWS][GRID_COLS] = {
@@ -569,6 +570,7 @@ void setup() {
 }
 
 void loop() {
+  Blynk.run();
   // ======================================================================= Wifi Handle
   // Print Wi-Fi status
   if (WiFi.status() == WL_CONNECTED) {
@@ -632,11 +634,14 @@ void loop() {
     Serial.print(" C | ");
     Serial.println(humidity);
 
-    if (isnan(temperature)) {
+    if (isnan(w_temperature)) {
       Serial.println("Failed to read from DHT21 sensor!");
     } else {
-      if (temperature > TEMP_UPPER_THRESHOLD) {
+      if (w_temperature > setpoint) {
         // Serial.println("Turn the relay ON");
+        digitalWrite(BUZZER_1_PIN, HIGH);  // turn on buzzer
+        delay(2000);
+        digitalWrite(BUZZER_1_PIN, LOW);  // turn on buzzer
         digitalWrite(RELAY_1_PIN, HIGH);  // turn on
         status_blower = 1;
         blower = "ON";
@@ -662,14 +667,16 @@ void loop() {
     Serial.println(nilai_ph);
     delay(200);
 
-    adc0 = ads.readADC_SingleEnded(0);
-    volts0 = ads.computeVolts(adc0);
-    voltage = ads.readADC_SingleEnded(0) / 10;
-    ecValue = ec.readEC(voltage, w_temperature);  // convert voltage to EC with temperature compensation
-    tDS = ((ecValue * 100) / 1.1);
-    delay(200);
-    Serial.print("TDS : ");
-    Serial.println(tDS);
+    // adc0 = ads.readADC_SingleEnded(0);
+    // volts0 = ads.computeVolts(adc0);
+    // voltage = ads.readADC_SingleEnded(0) / 10;
+    // ecValue = ec.readEC(voltage, w_temperature);  // convert voltage to EC with temperature compensation
+    // tDS = ((ecValue * 100) / 1.1);
+    // delay(200);
+    // Serial.print("TDS : ");
+    // Serial.println(tDS);
+
+    cek_tds();
   }
   // ======================================================================= Mengambil Waktu
 
@@ -700,10 +707,10 @@ void loop() {
     }
     delay(200);
 
-    if (w_temperature < TEMP_UPPER_THRESHOLD || w_temperature > TEMP_LOWER_THRESHOLD) {
+    if (w_temperature < setpoint || w_temperature > TEMP_LOWER_THRESHOLD) {
     status_ds = "NORMAL";
     }
-    else if (w_temperature > TEMP_UPPER_THRESHOLD || w_temperature < TEMP_LOWER_THRESHOLD) {
+    else if (w_temperature > setpoint || w_temperature < TEMP_LOWER_THRESHOLD) {
     status_ds = "ABNORMAL";
     } else {
     status_ds = "ERROR";
@@ -737,6 +744,12 @@ void loop() {
   Blynk.virtualWrite(V0, tDS);
   Blynk.virtualWrite(V1, nilai_ph);
   Blynk.virtualWrite(V2, w_temperature);
-  Blynk.virtualWrite(V3, humidity);
   Blynk.virtualWrite(V4, status_blower);
 }
+
+  BLYNK_WRITE(V3) {
+  setpoint = param.asFloat(); // Get the value from the Blynk app
+  Serial.print("Setpoint updated: ");
+  Serial.println(setpoint);
+  }
+
