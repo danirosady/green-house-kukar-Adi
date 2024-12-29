@@ -1,10 +1,6 @@
 // Last update : 27 Desember 20244
 #define BLYNK_PRINT Serial
 
-#define BLYNK_TEMPLATE_ID "TMPL605TnFnNR"
-#define BLYNK_TEMPLATE_NAME "gh1"
-#define BLYNK_AUTH_TOKEN "pjXqJ1ufzY92Tt-5Ggihf9q7OkRue4Cs"
-
 #include <ArduinoJson.h>
 #include <WiFiManager.h>
 #include <TFT_eSPI.h>  // Pastikan untuk menggunakan library TFT yang sesuai
@@ -87,33 +83,19 @@ const long interval = 1000;        // Interval at which to print time (milliseco
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature sensors(&oneWire);
 
-//EC-TDS RS485
-const int TDS_SENSOR_PIN = 35; // Pin where the TDS sensor is connected (e.g., GPIO 34)
-const float VREF = 3.3;         // Reference voltage for ESP32 (3.3V)
-const int TDS_MAX = 2000;       // Maximum TDS value in ppm
+//EC-TDS
 float tDS;
-//BLYNK
-
 
 //STATE
 int status_blower;
 String blower;
-float temperature;
-float humidity;
-float w_temperature;
+float temperature; //DHT21
+float humidity; //DHT21
+float w_temperature; //DS1B20
 
-// const int potPin=25;
-const int dotPin=26;
+//PH SENSOR
 float ph,nilai_ph;
-// int phValue;
-int Value;
-
 float voltage;
-float ecValue;
-int16_t adc0;
-int16_t adc1;
-float volts0;
-float volts1;
 
 String status_dht;
 String status_ds;
@@ -134,8 +116,6 @@ void drawVerticalGradient(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t c
     tft.drawLine(x, y + i, x + w, y + i, color);
   }
 }
-
-
 
 // Function to truncate text with ellipsis
 String truncateText(String text, int maxWidth) {
@@ -367,22 +347,45 @@ void cek_ds() {
 }
 
 void cek_ph() {
-    int Value = analogRead(26);
-    float voltage=Value*(3.3/4095.0);
-    ph=(3.3*voltage);
-    Serial.print(" | pH : ");
-    Serial.print(Value);
-    Serial.print(" | ");
-    // float voltage=Value*(3.3/4095.0);
-    // float ph=(3.3*voltage);
-    nilai_ph = ph ;
+      Serial.println("Checking for ph sensor...");
+
+  // Read incoming data from Arduino via UART
+  if (mySerial.available()) {
+    String receivedData = mySerial.readString();  // Read the incoming data (single number)
+
+    // Print the received data (for debugging)
+    Serial.println("Received Data: " + receivedData);
+    DynamicJsonDocument doc(1024);  // Allocate memory for JSON document
+    DeserializationError error = deserializeJson(doc, receivedData);
+
+    if (error) {
+      Serial.println("Failed to parse JSON");
+      return;
+    }
+
+    nilai_ph = doc["pH"];    // pH value from Arduino
+  }
 }
 
 void cek_tds(){
-  int sensorValuetDS = analogRead(TDS_SENSOR_PIN);
-  float voltagetDS = sensorValuetDS * (VREF / 4095.0);
-  tDS = (voltagetDS / 5) * TDS_MAX;
-  // tDS = sensorValuetDS;
+      Serial.println("Checking for tds sensor...");
+
+  // Read incoming data from Arduino via UART
+  if (mySerial.available()) {
+    String receivedData = mySerial.readString();  // Read the incoming data (single number)
+
+    // Print the received data (for debugging)
+    Serial.println("Received Data: " + receivedData);
+    DynamicJsonDocument doc(1024);  // Allocate memory for JSON document
+    DeserializationError error = deserializeJson(doc, receivedData);
+
+    if (error) {
+      Serial.println("Failed to parse JSON");
+      return;
+    }
+
+    tDS = doc["TDS"];  // TDS value from Arduino
+  }
 }
 
 
@@ -424,7 +427,7 @@ void setup() {
   //======================================================================= Setup Wifi Manager
   //wm.resetSettings();  // Pakai ini jika dalam mode DEV
   tft.println("Menghubungkan Wifi");
-  bool res = wm.autoConnect("GREENHOUSE-A997", "60776747");
+  bool res = wm.autoConnect(WIFI_SSID, WIFI_PASSWORD);
 
   if (res) {
     //if you get here you have connected to the WiFi
@@ -447,10 +450,6 @@ void setup() {
     sensors.begin();
     //=======================================================================SETUP DS18B20
     
-    //=======================================================================SETUP TDS
-
-    //=======================================================================SETUP TDS
-
     delay(200);
     cek_dht();
     delay(200);
@@ -663,45 +662,8 @@ void loop() {
     sensors.requestTemperatures();
     w_temperature = sensors.getTempCByIndex(0); 
 
-    //PH Sensor
-    // int Value = analogRead(26); // Read the ADC value (0 to 4095)
-    // int Value = 3000; // Read the ADC value (0 to 4095)
-    // delay(50);
-    // voltage = Value * (3.3 / 4095.0); // Convert ADC value to voltage
-    // Serial.print(" | pH : ");
-    // Serial.print(analogRead(26));
-    // float slope = 59.16; // pH sensor slope (mV/pH)
-    // float offset = 2.5;  // Example offset voltage (depends on calibration)
-    // ph = (voltage - offset) / slope + 7.0;
-
-    // int Value = analogRead(25); 
-    // voltage=Value*(3.3/4095.0);
-    // ph=(3.3*voltage);
-    // Value = analogRead(potPin);
-
-    // Serial.print(" | ");
-    // float voltage=Value*(3.3/4095.0);
-    // ph=(3.3*voltage);
-    // nilai_ph = ph;
-    // Serial.println(nilai_ph);
-    // delay(200);
-
-    // adc0 = ads.readADC_SingleEnded(0);
-    // volts0 = ads.computeVolts(adc0);
-    // voltage = ads.readADC_SingleEnded(0) / 10;
-    // ecValue = ec.readEC(voltage, w_temperature);  // convert voltage to EC with temperature compensation
-    // tDS = ((ecValue * 100) / 1.1);
-    // delay(200);
-    // Serial.print("TDS : ");
-    // Serial.println(tDS);
-
-  //     int sensorValuetDS = analogRead(TDS_SENSOR_PIN);
-  // float voltagetDS = sensorValuetDS * (VREF / 4095.0);
-  // tDS = (voltagetDS / 5) * TDS_MAX;
-  // tDS = sensorValuetDS;
-
-      //TDS AND PH FROM ARDUINO
-      Serial.println("Checking for data...");
+    //TDS AND PH FROM ARDUINO
+    Serial.println("Checking for data...");
 
   // Read incoming data from Arduino via UART
   if (mySerial.available()) {
@@ -800,8 +762,6 @@ void loop() {
   drawInfo(info);
   // ======================================================================= TFT DRAW
 
-  // Blynk.virtualWrite(V0, tDS);
-  // Blynk.virtualWrite(V1, nilai_ph);
   Blynk.virtualWrite(V2, w_temperature);
   Blynk.virtualWrite(V4, status_blower); //1 on // 0 off
 }
@@ -811,4 +771,3 @@ void loop() {
   Serial.print("Setpoint updated: ");
   Serial.println(setpoint);
   }
-
